@@ -48,12 +48,20 @@
 
         const { useState, useEffect, useMemo } = React;
 
-        // Firebase Configuration (Global variables provided by immersive environment)
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+	const firebaseConfig = {
+  apiKey: "AIzaSyCp3d4q_pbs6p2umIssdc1NRQMVW5GtzPo",
+  authDomain: "model-student-vote-1b0a9.firebaseapp.com",
+  projectId: "model-student-vote-1b0a9",
+  storageBucket: "model-student-vote-1b0a9.firebasestorage.app",
+  messagingSenderId: "976853423172",
+  appId: "1:976853423172:web:4a6ed1ea02f24cab149811",
+  measurementId: "G-3F4L09KC0J"
+};
+
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'class-vote-app';
+        const appId = 'class-vote-app';
 
         // 24 Students Data
         const STUDENTS = [
