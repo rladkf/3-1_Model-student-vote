@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>♥3-1♥ 우리 반 친구 칭찬하기</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script>
+        Babel.registerPreset("my-preset", {
+            presets: [[Babel.availablePresets["react"], { runtime: "classic" }]],
+        });
+    </script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', 'Inter', sans-serif;
+            background-color: #fdf2f8; /* pink-50 */
+        }
+        .fade-in {
+            animation: fadeIn 0.4s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module" data-presets="my-preset">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, addDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const { useState, useEffect, useMemo } = React;
+
+        // Firebase Configuration (Global variables provided by immersive environment)
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'class-vote-app';
+
+        // 24 Students Data
+        const STUDENTS = [
+            { id: 1, name: '짠낫민', phone: '2899' },
+            { id: 2, name: '구본준', phone: '4264' },
+            { id: 3, name: '김유림', phone: '2679' },
+            { id: 4, name: '김은성', phone: '4082' },
+            { id: 5, name: '문서준', phone: '7904' },
+            { id: 6, name: '민경준', phone: '2415' },
+            { id: 7, name: '배진형', phone: '7040' },
+            { id: 8, name: '선지후', phone: '0697' },
+            { id: 9, name: '신정호', phone: '6303' },
+            { id: 10, name: '유태현', phone: '9007' },
+            { id: 11, name: '조연우', phone: '8221' },
+            { id: 12, name: '조재혁', phone: '5401' },
+            { id: 13, name: '김라윤', phone: '4770' },
+            { id: 14, name: '김태린', phone: '4188' },
+            { id: 15, name: '김하은', phone: '5329' },
+            { id: 16, name: '나하음', phone: '9745' },
+            { id: 17, name: '배지원', phone: '2185' },
+            { id: 18, name: '안유민', phone: '3132' },
+            { id: 19, name: '오소진', phone: '1095' },
+            { id: 20, name: '오윤지', phone: '4720' },
+            { id: 21, name: '이다은', phone: '5867' },
+            { id: 22, name: '이한나', phone: '6338' },
+            { id: 23, name: '허주영', phone: '4981' },
+            { id: 24, name: '이세령', phone: '6265' }
+        ];
+
+        // 이름에 따른 맞춤형 인사말 생성 (성 제외)
+        const getGreeting = (name) => {
+            if (!name) return '';
+            const firstName = name.length > 2 ? name.substring(1) : name; 
+            const lastChar = firstName.charCodeAt(firstName.length - 1);
+            if (lastChar < 0xAC00 || lastChar > 0xD7A3) return `안녕~ ${firstName}아(야)!`;
+            const hasBatchim = (lastChar - 0xAC00) % 28 > 0;
+            return `안녕~ ${firstName}${hasBatchim ? '아' : '야'}!`;
+        };
+
+        const PLACEHOLDER_TEXT = `이 친구를 추천하는 이유를 한 문장 이상 적어줘. 많을수록, 구체적일수록 더더더 좋아!\nex1) 청소가 끝났는데 3분단 뒤가 여전히 더러워서 아름이가 자기 청소구역이 아닌데도 깨끗이 청소했다.\nex2) 체육대회 준비를 하면서 우리 반 의견이 안 모이고 다들 관심이 없었는데, 아름이가 나서서 친구들 생각을 물어보고 빠르게 정리해 주었다.`;
+
+        function App() {
+            const [user, setUser] = useState(null);
+            const [currentUser, setCurrentUser] = useState(null);
+            
+            // Login States
+            const [selectedStudentId, setSelectedStudentId] = useState('');
+            const [phoneInput, setPhoneInput] = useState('');
+            const [isAdminMode, setIsAdminMode] = useState(false);
+            const [adminPassword, setAdminPassword] = useState('');
+            const [loginError, setLoginError] = useState('');
+
+            // Voting States
+            const [vote1, setVote1] = useState({ studentId: '', reason: '' });
+            const [vote2, setVote2] = useState({ studentId: '', reason: '' });
+            const [isSubmitting, setIsSubmitting] = useState(false);
+            const [submitSuccess, setSubmitSuccess] = useState(false);
+
+            // Re-voting States
+            const [isRevoteMode, setIsRevoteMode] = useState(false);
+            const [agreedToRevote, setAgreedToRevote] = useState(false);
+            const [revoteReasonInput, setRevoteReasonInput] = useState('');
+            const [maxRevoteReached, setMaxRevoteReached] = useState(false);
+
+            // Admin States
+            const [isClosed, setIsClosed] = useState(false);
+            const [allVotes, setAllVotes] = useState([]);
+            const [authModal, setAuthModal] = useState({ isOpen: false, type: '', error: '' });
+
+            // 1. Firebase Authentication Initialization
+            useEffect(() => {
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Auth Error:", error);
+                    }
+                };
+                initAuth();
+
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            // 2. Data Fetching (Listeners - Always active to color code buttons)
+            useEffect(() => {
+                if (!user) return;
+
+                const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+                const unsubConfig = onSnapshot(configRef, (docSnap) => {
+                    if (docSnap.exists()) {
+                        setIsClosed(docSnap.data().isClosed || false);
+                    }
+                }, (error) => console.error(error));
+
+                const votesRef = collection(db, 'artifacts', appId, 'public', 'data', 'votes');
+                const unsubVotes = onSnapshot(votesRef, (snapshot) => {
+                    const votesList = [];
+                    snapshot.forEach((doc) => {
+                        votesList.push({ id: doc.id, ...doc.data() });
+                    });
+                    setAllVotes(votesList);
+                }, (error) => console.error(error));
+
+                return () => {
+                    unsubConfig();
+                    unsubVotes();
+                };
+            }, [user]);
+
+            // Calculate Statistics for Admin
+            const voteStats = useMemo(() => {
+                const counts = {};
+                STUDENTS.forEach(s => counts[s.id] = { name: s.name, count: 0 });
+                
+                allVotes.forEach(vote => {
+                    if (vote.vote1_id && counts[vote.vote1_id]) counts[vote.vote1_id].count += 1;
+                    if (vote.vote2_id && counts[vote.vote2_id]) counts[vote.vote2_id].count += 1;
+                });
+
+                return Object.values(counts)
+                    .filter(s => s.count > 0)
+                    .sort((a, b) => b.count - a.count);
+            }, [allVotes]);
+
+            // Handlers
+            const handleLogin = (e) => {
+                e.preventDefault();
+                setLoginError('');
+
+                if (isAdminMode) {
+                    if (adminPassword === '3495') {
+                        setCurrentUser({ isAdmin: true, name: '관리자' });
+                        setAdminPassword('');
+                    } else {
+                        setLoginError('관리자 비밀번호가 일치하지 않습니다.');
+                    }
+                } else {
+                    if (!selectedStudentId || !phoneInput) {
+                        setLoginError('내 이름을 선택하고 핸드폰 뒷자리(4자리)를 입력해줘.');
+                        return;
+                    }
+                    const student = STUDENTS.find(s => s.id === parseInt(selectedStudentId));
+                    if (student && student.phone === phoneInput) {
+                        const userVoteList = allVotes.filter(v => v.voterId === student.id);
+                        
+                        setCurrentUser(student);
+                        setPhoneInput('');
+                        setLoginError('');
+
+                        // Check re-vote status
+                        if (userVoteList.length > 0) {
+                            const existingVote = userVoteList[0];
+                            if (existingVote.revoteCount >= 1) {
+                                setMaxRevoteReached(true);
+                            } else {
+                                setIsRevoteMode(true);
+                            }
+                        }
+                    } else {
+                        setLoginError('핸드폰 번호 뒷자리가 맞지 않아. 다시 확인해줘!');
+                    }
+                }
+            };
+
+            const handleLogout = () => {
+                setCurrentUser(null);
+                setVote1({ studentId: '', reason: '' });
+                setVote2({ studentId: '', reason: '' });
+                setSubmitSuccess(false);
+                setIsRevoteMode(false);
+                setAgreedToRevote(false);
+                setRevoteReasonInput('');
+                setMaxRevoteReached(false);
+                setSelectedStudentId('');
+                setPhoneInput('');
+            };
+
+            const handleVoteSubmit = async (e) => {
+                e.preventDefault();
+                if (!user || !currentUser) return;
+                
+                if (!vote1.studentId || !vote1.reason.trim()) {
+                    alert("첫 번째 추천 친구와 추천 사유를 모두 작성해줘!");
+                    return;
+                }
+
+                if (vote2.studentId && vote2.studentId !== 'none' && !vote2.reason.trim()) {
+                    alert("두 번째 추천 친구를 선택했다면 사유도 꼭 적어야 해!");
+                    return;
+                }
+
+                setIsSubmitting(true);
+
+                try {
+                    const voteData = {
+                        voterId: currentUser.id,
+                        voterName: currentUser.name,
+                        vote1_id: parseInt(vote1.studentId),
+                        vote1_name: STUDENTS.find(s => s.id === parseInt(vote1.studentId))?.name,
+                        vote1_reason: vote1.reason.trim(),
+                        vote2_id: (vote2.studentId && vote2.studentId !== 'none') ? parseInt(vote2.studentId) : null,
+                        vote2_name: (vote2.studentId && vote2.studentId !== 'none') ? STUDENTS.find(s => s.id === parseInt(vote2.studentId))?.name : null,
+                        vote2_reason: (vote2.studentId && vote2.studentId !== 'none') ? vote2.reason.trim() : null,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    if (isRevoteMode) {
+                        voteData.revoteCount = 1;
+                        voteData.revoteReason = revoteReasonInput;
+                        const existingVote = allVotes.find(v => v.voterId === currentUser.id);
+                        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'votes', existingVote.id), voteData);
+                    } else {
+                        voteData.revoteCount = 0;
+                        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'votes'), voteData);
+                    }
+                    
+                    setSubmitSuccess(true);
+                } catch (error) {
+                    console.error("Submit Error:", error);
+                    alert("제출 중에 오류가 발생했어. 다시 시도해줘!");
+                } finally {
+                    setIsSubmitting(false);
+                }
+            };
+
+            const toggleVoteStatus = async () => {
+                if (!user) return;
+                try {
+                    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config'), {
+                        isClosed: !isClosed
+                    }, { merge: true });
+                } catch (error) {
+                    console.error("Status Toggle Error:", error);
+                }
+            };
+
+            const executeResetVotes = async () => {
+                if (!user) return;
+                setAuthModal({ isOpen: false, type: '', error: '' });
+                try {
+                    const snapshot = await getDocs(collection(db, 'artifacts', appId, 'public', 'data', 'votes'));
+                    const deletePromises = snapshot.docs.map(docSnap => deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'votes', docSnap.id)));
+                    await Promise.all(deletePromises);
+                    setAuthModal({ isOpen: true, type: 'admin_alert', error: '모든 투표가 성공적으로 초기화되었습니다.' });
+                } catch (error) {
+                    console.error("Reset Error:", error);
+                    setAuthModal({ isOpen: true, type: 'admin_alert', error: '초기화 중 오류가 발생했습니다.' });
+                }
+            };
+
+            // 1. Initial Login Screen
+            if (!currentUser) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4">
+                        <div className="bg-white rounded-3xl p-6 md:p-8 w-full max-w-md shadow-sm border border-pink-100 fade-in">
+                            <div className="text-center mb-6">
+                                <h1 className="text-2xl md:text-3xl font-bold text-pink-600 mb-2">♥3-1♥<br/>우리 반 친구 칭찬하기</h1>
+                                <p className="text-gray-500 text-sm font-medium bg-gray-50 py-2 rounded-lg">
+                                    {!isAdminMode ? (
+                                        !selectedStudentId ? '아래에서 네 이름을 찾고, 핸드폰 번호 뒷자리를 입력해줘!' : '너의 핸드폰 번호 뒷자리를 입력해줘!'
+                                    ) : '관리자 비밀번호를 입력해주세요.'}
+                                </p>
+                            </div>
+
+                            <form onSubmit={handleLogin} className="space-y-6">
+                                {!isAdminMode ? (
+                                    !selectedStudentId ? (
+                                        <div className="fade-in">
+                                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                                                {STUDENTS.map(s => {
+                                                    const vData = allVotes.find(v => v.voterId === s.id);
+                                                    const voted = !!vData;
+                                                    const fullyVoted = vData && vData.revoteCount >= 1;
+
+                                                    return (
+                                                        <button
+                                                            key={s.id}
+                                                            type="button"
+                                                            onClick={() => { setSelectedStudentId(s.id); setLoginError(''); }}
+                                                            className={`py-3 px-1 border rounded-xl transition-all shadow-sm text-sm md:text-base font-bold flex flex-col items-center justify-center gap-1 min-h-[4rem]
+                                                                ${fullyVoted ? 'bg-gray-100 border-gray-200 text-gray-400' 
+                                                                : voted ? 'bg-pink-50 border-pink-200 text-pink-600' 
+                                                                : 'bg-white border-gray-200 hover:border-pink-400 hover:bg-pink-50 text-gray-700'}`}
+                                                        >
+                                                            <span>{s.name}</span>
+                                                            {fullyVoted ? <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-0.5 rounded-full font-medium tracking-wide">완료</span>
+                                                            : voted ? <span className="text-[10px] bg-pink-200 text-pink-600 px-2 py-0.5 rounded-full font-medium tracking-wide">투표함</span>
+                                                            : null}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="fade-in space-y-6">
+                                            <div className="bg-pink-50 rounded-xl p-4 flex items-center justify-between border border-pink-100">
+                                                <span className="font-bold text-gray-800 text-lg">
+                                                    {STUDENTS.find(s => s.id === parseInt(selectedStudentId))?.name}
+                                                </span>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => { setSelectedStudentId(''); setPhoneInput(''); setLoginError(''); }}
+                                                    className="text-sm text-gray-500 hover:text-gray-700 underline font-medium"
+                                                >
+                                                    뒤로가기
+                                                </button>
+                                            </div>
+                                            <div>
+                                                <label className="block text-sm font-semibold text-gray-700 mb-3 text-center">핸드폰 뒷자리 (4자리)</label>
+                                                <input 
+                                                    type="password" 
+                                                    inputMode="numeric"
+                                                    maxLength="4"
+                                                    placeholder="예: 1234"
+                                                    className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all text-center text-2xl tracking-[0.5em]"
+                                                    value={phoneInput}
+                                                    onChange={(e) => setPhoneInput(e.target.value)}
+                                                    autoFocus
+                                                />
+                                            </div>
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="fade-in">
+                                        <label className="block text-sm font-semibold text-gray-700 mb-2">관리자 비밀번호</label>
+                                        <input 
+                                            type="password" 
+                                            placeholder="비밀번호 입력"
+                                            className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all text-lg"
+                                            value={adminPassword}
+                                            onChange={(e) => setAdminPassword(e.target.value)}
+                                            autoFocus
+                                        />
+                                    </div>
+                                )}
+
+                                {loginError && <p className="text-red-500 text-sm text-center font-bold bg-red-50 py-2 rounded-lg">{loginError}</p>}
+
+                                {(isAdminMode || selectedStudentId) && (
+                                    <button type="submit" className="w-full py-4 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors shadow-md fade-in text-lg">
+                                        접속하기
+                                    </button>
+                                )}
+                            </form>
+
+                            <div className="mt-8 text-center">
+                                <button 
+                                    onClick={() => { setIsAdminMode(!isAdminMode); setLoginError(''); setSelectedStudentId(''); setPhoneInput(''); }}
+                                    className="text-sm text-gray-400 hover:text-gray-600 transition-colors underline"
+                                >
+                                    {isAdminMode ? '학생 로그인으로 돌아가기' : '관리자 접속'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 2. Admin Dashboard Render
+            if (currentUser.isAdmin) {
+                return (
+                    <div className="max-w-5xl mx-auto p-4 md:p-6 pt-8 fade-in">
+                        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                            <h1 className="text-2xl font-bold text-gray-800">📊 관리자 대시보드</h1>
+                            <div className="flex gap-2">
+                                <button onClick={() => setAuthModal({ isOpen: true, type: 'confirm_reset' })} className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-lg text-sm font-semibold transition-colors">투표 초기화</button>
+                                <button onClick={handleLogout} className="px-4 py-2 bg-pink-100 hover:bg-pink-200 text-pink-700 rounded-lg text-sm font-semibold transition-colors shadow-sm">로그아웃</button>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                                <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                                    투표 현황
+                                    <span className="text-sm font-bold bg-pink-100 text-pink-600 px-3 py-1 rounded-full">총 24명 중 {allVotes.length}명 참여</span>
+                                </h2>
+                                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                    <span className="font-medium text-gray-700">현재 상태</span>
+                                    <span className={`px-3 py-1 rounded-full text-sm font-bold ${isClosed ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
+                                        {isClosed ? '마감됨' : '진행중'}
+                                    </span>
+                                </div>
+                                <button 
+                                    onClick={toggleVoteStatus}
+                                    className={`w-full mt-4 py-3 rounded-xl font-bold text-white transition-colors shadow-sm ${isClosed ? 'bg-green-500 hover:bg-green-600' : 'bg-gray-800 hover:bg-gray-900'}`}
+                                >
+                                    {isClosed ? '투표 다시 열기' : '투표 마감하기'}
+                                </button>
+                            </div>
+
+                            <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 md:col-span-2">
+                                <h2 className="text-lg font-bold text-gray-800 mb-4">실시간 득표 현황</h2>
+                                <div className="space-y-3 max-h-48 overflow-y-auto pr-2">
+                                    {voteStats.length > 0 ? voteStats.map((stat, idx) => (
+                                        <div key={idx} className="flex items-center justify-between p-3 bg-pink-50 rounded-lg border border-pink-100">
+                                            <span className="font-bold text-gray-800">{stat.name}</span>
+                                            <span className="bg-pink-500 text-white px-3 py-1 rounded-full text-sm font-bold">{stat.count}표</span>
+                                        </div>
+                                    )) : <p className="text-gray-400 text-center py-4">아직 투표가 없습니다.</p>}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+                            <div className="p-6 border-b border-gray-100">
+                                <h2 className="text-lg font-bold text-gray-800">상세 추천 사유</h2>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-50 text-gray-600 text-sm">
+                                            <th className="p-4 border-b font-semibold whitespace-nowrap">투표자</th>
+                                            <th className="p-4 border-b font-semibold min-w-[200px]">추천 사유 1</th>
+                                            <th className="p-4 border-b font-semibold min-w-[200px]">추천 사유 2</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="text-sm text-gray-700 divide-y divide-gray-100">
+                                        {allVotes.map(vote => (
+                                            <tr key={vote.id} className="hover:bg-gray-50/50">
+                                                <td className="p-4 font-medium whitespace-nowrap align-top">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span>{vote.voterName}</span>
+                                                        {vote.revoteCount >= 1 && <span className="bg-yellow-100 text-yellow-700 text-[10px] px-2 py-0.5 rounded-full font-bold">재투표</span>}
+                                                    </div>
+                                                    {vote.revoteReason && <p className="text-xs text-gray-500 italic mt-1 max-w-[120px] whitespace-normal">사유: {vote.revoteReason}</p>}
+                                                </td>
+                                                <td className="p-4 align-top">
+                                                    <span className="font-bold text-pink-600 block mb-1">{vote.vote1_name}</span>
+                                                    <p className="text-gray-600 whitespace-pre-wrap">{vote.vote1_reason}</p>
+                                                </td>
+                                                <td className="p-4 align-top">
+                                                    {vote.vote2_name ? (
+                                                        <>
+                                                            <span className="font-bold text-blue-600 block mb-1">{vote.vote2_name}</span>
+                                                            <p className="text-gray-600 whitespace-pre-wrap">{vote.vote2_reason}</p>
+                                                        </>
+                                                    ) : <span className="text-gray-400 italic">선택 안 함</span>}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {allVotes.length === 0 && <tr><td colSpan="3" className="p-8 text-center text-gray-400">제출된 투표가 없습니다.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        {authModal.isOpen && (
+                            <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                                <div className="bg-white rounded-2xl p-7 w-full max-w-sm fade-in shadow-2xl">
+                                    {authModal.type === 'confirm_reset' ? (
+                                        <div className="text-center">
+                                            <div className="text-red-500 mb-4">
+                                                <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                            </div>
+                                            <h3 className="text-lg font-bold text-gray-800 mb-2">투표 초기화</h3>
+                                            <p className="text-gray-600 mb-6 text-sm">정말로 모든 투표 데이터를 초기화하시겠습니까?<br/>이 작업은 되돌릴 수 없습니다.</p>
+                                            <div className="flex gap-3">
+                                                <button onClick={() => setAuthModal({ isOpen: false, type: '', error: '' })} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors">취소</button>
+                                                <button onClick={executeResetVotes} className="flex-1 py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors">초기화</button>
+                                            </div>
+                                        </div>
+                                    ) : authModal.type === 'admin_alert' ? (
+                                        <div className="text-center">
+                                            <div className="text-pink-500 mb-4">
+                                                <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                            </div>
+                                            <h3 className="text-lg font-bold text-gray-800 mb-2">알림</h3>
+                                            <p className="text-gray-600 mb-6">{authModal.error}</p>
+                                            <button onClick={() => setAuthModal({ isOpen: false, type: '', error: '' })} className="w-full bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-xl transition-colors">확인</button>
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+            }
+
+            // 3. Status Screens (Success, Closed, Max Revote Reached)
+            if (submitSuccess) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 fade-in">
+                        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-sm border border-pink-100">
+                            <div className="w-20 h-20 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-2">투표 완료!</h2>
+                            <p className="text-gray-600 mb-8 leading-relaxed">우리 반을 위해 따뜻한 추천을 해줘서 고마워!</p>
+                            <button onClick={handleLogout} className="w-full py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-colors text-lg">처음으로 돌아가기</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (maxRevoteReached) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 fade-in">
+                        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-sm border border-pink-100">
+                            <div className="w-20 h-20 bg-pink-100 text-pink-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-3">더 이상 투표할 수 없어!</h2>
+                            <p className="text-gray-600 mb-8 leading-relaxed">이미 재투표까지 모두 완료했어.<br/>좋은 결과가 나올 때까지 기다려줘!</p>
+                            <button onClick={handleLogout} className="w-full py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-colors text-lg">처음으로 돌아가기</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (isClosed) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 fade-in">
+                        <div className="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-sm border border-gray-200">
+                            <div className="text-gray-400 mb-6">
+                                <svg className="w-20 h-20 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-3">투표가 마감되었어</h2>
+                            <p className="text-gray-600 mb-8 leading-relaxed">모범학생 추천 기간이 끝났어.<br/>참여해줘서 정말 고마워!</p>
+                            <button onClick={handleLogout} className="w-full py-4 bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold rounded-xl transition-colors text-lg">처음으로 돌아가기</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 4. Re-vote Interception Screen
+            if (isRevoteMode && !agreedToRevote) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 fade-in">
+                        <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full text-center shadow-sm border border-pink-100">
+                            <div className="w-16 h-16 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-3">다시 투표할래?</h2>
+                            <p className="text-gray-600 mb-6 text-sm md:text-base leading-relaxed">
+                                너는 이미 투표를 완료했어.<br/>하지만 <strong>딱 1번</strong> 다시 투표할 수 있는 기회가 있어.<br/>다시 투표하려면 아래에 짧게 사유를 적어줘!
+                            </p>
+                            <textarea 
+                                className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 outline-none mb-6 resize-none text-sm md:text-base"
+                                rows="3"
+                                placeholder="예: 마음이 바뀌었어, 아까 친구 이름을 잘못 눌렀어 등"
+                                value={revoteReasonInput}
+                                onChange={e => setRevoteReasonInput(e.target.value)}
+                            ></textarea>
+                            <div className="flex gap-3">
+                                <button onClick={handleLogout} className="flex-1 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors">안 할래</button>
+                                <button 
+                                    onClick={() => {
+                                        if(!revoteReasonInput.trim()) { alert('재투표 사유를 적어줘!'); return; }
+                                        setAgreedToRevote(true);
+                                    }} 
+                                    className="flex-1 py-4 bg-pink-500 hover:bg-pink-600 text-white font-bold rounded-xl transition-colors"
+                                >재투표 시작</button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 5. Main Voting Form
+            return (
+                <div className="max-w-2xl mx-auto p-4 py-6 md:py-8 md:p-8 fade-in">
+                    <div className="flex justify-between items-center mb-6">
+                        <h1 className="text-xl md:text-2xl font-bold text-pink-600">♥3-1♥ 우리 반 친구 칭찬하기</h1>
+                        <button onClick={handleLogout} className="px-3 md:px-4 py-2 bg-rose-100 hover:bg-rose-200 text-rose-700 font-bold rounded-xl transition-colors shadow-sm text-xs md:text-sm whitespace-nowrap">
+                            로그아웃
+                        </button>
+                    </div>
+
+                    <div className="bg-white rounded-3xl p-5 md:p-8 shadow-sm border border-pink-100 relative overflow-hidden mb-6">
+                        <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-pink-300 via-rose-300 to-pink-300"></div>
+                        
+                        <div className="mb-8 bg-pink-50/50 p-5 rounded-2xl border border-pink-100">
+                            <h2 className="text-lg md:text-xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+                                <span className="text-pink-500">✨</span> {getGreeting(currentUser.name)}
+                            </h2>
+                            <p className="text-gray-600 leading-relaxed text-sm md:text-base break-keep">
+                                우리 학급을 위해서 열심히 봉사하거나, 도움이 필요한 친구에게 손길을 내미는 친구, 또는 수업 태도 및 예절이 바르고 성실한 친구 등 모범적인 친구를 추천해 줘! (최대 2명)
+                            </p>
+                        </div>
+
+                        <form onSubmit={handleVoteSubmit} className="space-y-8">
+                            {/* Vote 1 (Required) */}
+                            <div className="bg-white p-5 md:p-6 rounded-2xl border border-gray-200 shadow-sm relative">
+                                <div className="absolute -top-3 left-4 bg-pink-500 text-white px-3 py-0.5 rounded-full text-xs font-bold tracking-wider">필수</div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-full bg-pink-100 text-pink-600 flex items-center justify-center text-sm">1</span>
+                                    첫 번째 추천 친구
+                                </h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <div className="relative">
+                                            <select 
+                                                required
+                                                className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all text-sm md:text-base appearance-none pr-10"
+                                                value={vote1.studentId}
+                                                onChange={(e) => setVote1({...vote1, studentId: e.target.value})}
+                                            >
+                                                <option value="" disabled hidden>누구를 추천할래? (본인 선택 가능)</option>
+                                                {STUDENTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                            </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="mt-4">
+                                        <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">추천 사유</label>
+                                        <textarea 
+                                            required
+                                            rows="4"
+                                            placeholder={PLACEHOLDER_TEXT}
+                                            className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all resize-none text-sm md:text-base leading-relaxed"
+                                            value={vote1.reason}
+                                            onChange={(e) => setVote1({...vote1, reason: e.target.value})}
+                                        ></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Vote 2 (Optional) */}
+                            <div className="bg-white p-5 md:p-6 rounded-2xl border border-gray-200 shadow-sm relative">
+                                <div className="absolute -top-3 left-4 bg-gray-400 text-white px-3 py-0.5 rounded-full text-xs font-bold tracking-wider">선택</div>
+                                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                    <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-sm">2</span>
+                                    두 번째 추천 친구
+                                </h3>
+                                <div className="space-y-4">
+                                    <div>
+                                        <div className="relative">
+                                            <select 
+                                                className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all text-sm md:text-base appearance-none pr-10"
+                                                value={vote2.studentId}
+                                                onChange={(e) => setVote2({...vote2, studentId: e.target.value})}
+                                            >
+                                                <option value="" disabled hidden>한 명 더 있다면 또 추천해줘! (본인 선택 가능)</option>
+                                                <option value="none" className="text-gray-500 font-bold">추천 안 함</option>
+                                                {STUDENTS
+                                                    .filter(s => s.id !== parseInt(vote1.studentId))
+                                                    .map(s => <option key={s.id} value={s.id}>{s.name}</option>)
+                                                }
+                                            </select>
+                                            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-400">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {vote2.studentId && vote2.studentId !== 'none' && (
+                                        <div className="fade-in mt-4">
+                                            <label className="block text-sm font-bold text-gray-700 mb-2 ml-1">추천 사유</label>
+                                            <textarea 
+                                                required={!!vote2.studentId && vote2.studentId !== 'none'}
+                                                rows="4"
+                                                placeholder={PLACEHOLDER_TEXT}
+                                                className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-pink-400 focus:border-pink-400 outline-none transition-all resize-none text-sm md:text-base leading-relaxed"
+                                                value={vote2.reason}
+                                                onChange={(e) => setVote2({...vote2, reason: e.target.value})}
+                                            ></textarea>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button 
+                                type="submit" 
+                                disabled={isSubmitting}
+                                className={`w-full py-4 text-white font-bold rounded-2xl transition-all shadow-md text-lg
+                                    ${isSubmitting ? 'bg-pink-300 cursor-not-allowed' : 'bg-pink-500 hover:bg-pink-600 hover:-translate-y-0.5'}`}
+                            >
+                                {isSubmitting ? '투표 중...' : '투표 완료하기'}
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <div className="mt-8 bg-pink-50 border border-pink-200 rounded-2xl p-4 flex items-center justify-center gap-2 shadow-sm">
+                        <svg className="w-6 h-6 text-pink-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <p className="text-pink-600 font-bold text-sm md:text-base">투표는 딱 1번만 다시 할 수 있어. 신중하게 작성해줘!</p>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
